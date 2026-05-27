@@ -27,7 +27,9 @@ use near_parameters::{
 use near_primitives_core::account::AccountContract;
 use near_primitives_core::config::INLINE_DISK_VALUE_THRESHOLD;
 use near_primitives_core::hash::CryptoHash;
-use near_primitives_core::types::{AccountId, Balance, EpochHeight, Gas, GasWeight, StorageUsage};
+use near_primitives_core::types::{
+    AccountId, Balance, EpochHeight, Gas, GasWeight, PromiseYieldStatus, StorageUsage,
+};
 use std::rc::Rc;
 
 macro_rules! bls12381_impl {
@@ -3843,6 +3845,33 @@ pub fn promise_yield_resume(
     let data_id = CryptoHash(data_id);
     let payload = payload.into();
     ctx.ext.submit_promise_resume_data(data_id, payload).map(u32::from)
+}
+
+/// Wasmtime shim for `VMLogic::promise_yield_resume_status`. See the
+/// rustdoc on the `VMLogic` method for the full semantics.
+pub fn promise_yield_resume_status(
+    ctx: &mut Ctx,
+    memory: &mut [u8],
+    data_id_len: u64,
+    data_id_ptr: u64,
+) -> Result<u32, VMLogicError> {
+    ctx.result_state.gas_counter.pay_base(base)?;
+    ctx.result_state.gas_counter.pay_base(yield_resume_status_base)?;
+    let data_id = get_memory_or_register(
+        &mut ctx.result_state.gas_counter,
+        memory,
+        &ctx.registers,
+        data_id_ptr,
+        data_id_len,
+    )?;
+    let data_id: [_; CryptoHash::LENGTH] =
+        (&*data_id).try_into().map_err(|_| HostError::DataIdMalformed)?;
+    let data_id = CryptoHash(data_id);
+    Ok(match ctx.ext.get_promise_yield_status(data_id)? {
+        None => 0,
+        Some(PromiseYieldStatus::Yielded) => 1,
+        Some(PromiseYieldStatus::ResumeInitiated) => 2,
+    })
 }
 
 /// If the current function is invoked by a callback we can access the execution results of the

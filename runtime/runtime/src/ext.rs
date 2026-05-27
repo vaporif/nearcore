@@ -13,8 +13,8 @@ use near_primitives::version::{ProtocolFeature, ProtocolVersion};
 use near_store::contract::ContractStorage;
 use near_store::trie::{AccessOptions, AccessTracker};
 use near_store::{
-    KeyLookupMode, TrieUpdate, TrieUpdateValuePtr, has_promise_yield_receipt,
-    has_promise_yield_status, set_promise_yield_status,
+    KeyLookupMode, TrieUpdate, TrieUpdateValuePtr, get_promise_yield_status,
+    has_promise_yield_receipt, has_promise_yield_status, set_promise_yield_status,
 };
 use near_vm_runner::logic::errors::{AnyError, InconsistentStateError, VMLogicError};
 use near_vm_runner::logic::types::{
@@ -399,6 +399,14 @@ impl<'a> External for RuntimeExt<'a> {
             // receipt manager.
             Ok(self.receipt_manager.checked_resolve_promise_yield(data_id, data))
         }
+    }
+
+    fn get_promise_yield_status(
+        &self,
+        data_id: CryptoHash,
+    ) -> Result<Option<PromiseYieldStatus>, VMLogicError> {
+        get_promise_yield_status(self.trie_update, &self.account_id, data_id)
+            .map_err(wrap_storage_error)
     }
 
     fn append_action_create_account(&mut self, receipt_index: ReceiptIndex) {

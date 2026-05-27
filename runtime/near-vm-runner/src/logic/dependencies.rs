@@ -4,7 +4,9 @@ use super::types::{GlobalContractDeployMode, GlobalContractIdentifier, ReceiptIn
 use crate::logic::types::ActionIndex;
 use near_crypto::PublicKey;
 use near_primitives_core::hash::CryptoHash;
-use near_primitives_core::types::{AccountId, Balance, Gas, GasWeight, Nonce, NonceIndex};
+use near_primitives_core::types::{
+    AccountId, Balance, Gas, GasWeight, Nonce, NonceIndex, PromiseYieldStatus,
+};
 use std::borrow::Cow;
 
 /// Representation of the address slice of guest memory.
@@ -315,6 +317,18 @@ pub trait External {
         data_id: CryptoHash,
         data: Vec<u8>,
     ) -> Result<bool, VMLogicError>;
+
+    /// Read the in-trie `PromiseYieldStatus` row for `(current_account_id, data_id)`.
+    ///
+    /// Returns `None` if no row is present (the receipt was never yielded,
+    /// has already executed, or has timed out). Otherwise returns the
+    /// stored discriminant: `Yielded` or `ResumeInitiated`.
+    ///
+    /// Read-only; view-call safe.
+    fn get_promise_yield_status(
+        &self,
+        data_id: CryptoHash,
+    ) -> Result<Option<PromiseYieldStatus>, VMLogicError>;
 
     /// Attach the [`CreateAccountAction`] action to an existing receipt.
     ///

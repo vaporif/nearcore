@@ -24,7 +24,7 @@ use near_primitives_core::account::AccountContract;
 use near_primitives_core::config::INLINE_DISK_VALUE_THRESHOLD;
 use near_primitives_core::hash::CryptoHash;
 use near_primitives_core::types::{
-    AccountId, Balance, Compute, EpochHeight, Gas, GasWeight, StorageUsage,
+    AccountId, Balance, Compute, EpochHeight, Gas, GasWeight, PromiseYieldStatus, StorageUsage,
 };
 use std::mem::size_of;
 use std::rc::Rc;
@@ -3491,6 +3491,58 @@ bls12381_p2_decompress_base + bls12381_p2_decompress_element * num_elements`
         let data_id = CryptoHash(data_id);
         let payload = payload.into_owned();
         self.ext.submit_promise_resume_data(data_id, payload).map(u32::from)
+    }
+
+    /// Query the in-trie status of a yielded receipt the caller created.
+    ///
+    /// Returns `0` if no status row is present in the trie for
+    /// `(current_account_id, data_id)` — meaning the receipt was never
+    /// yielded, has already executed, or has timed out. Returns `1` if
+    /// the row holds `PromiseYieldStatus::Yielded` (no resume yet).
+    /// Returns `2` if the row holds `PromiseYieldStatus::ResumeInitiated`
+    /// (at least one resume is in flight; further resumes are no-ops).
+    ///
+    /// The ABI matches `promise_yield_resume` in how `data_id` is read:
+    /// when `data_id_len == u64::MAX`, `data_id_ptr` is a register id;
+    /// otherwise `data_id_len` bytes are read from linear memory at
+    /// `data_id_ptr`. The return is shifted `+1` from the on-trie
+    /// discriminant so `0` signals "absent" without colliding with
+    /// `Yielded`.
+    ///
+    /// # Errors
+    ///
+    /// * If `data_id` is not exactly 32 bytes, returns `DataIdMalformed`.
+    /// * If `data_id_ptr + data_id_len` is outside guest memory, returns
+    ///   `MemoryAccessViolation`.
+    /// * Storage errors from the underlying trie read propagate as
+    ///   `VMLogicError::ExternalError`.
+    /// * Runs out of gas.
+    ///
+    /// # View calls
+    ///
+    /// Allowed. The call is read-only — no receipts, no storage writes.
+    ///
+    /// # Cost
+    ///
+    /// * `base` fee;
+    /// * `yield_resume_status_base` fee;
+    /// * Fees for reading the `data_id` from memory or register.
+    pub fn promise_yield_resume_status(
+        &mut self,
+        data_id_len: u64,
+        data_id_ptr: u64,
+    ) -> Result<u32, VMLogicError> {
+        self.result_state.gas_counter.pay_base(base)?;
+        self.result_state.gas_counter.pay_base(yield_resume_status_base)?;
+        let data_id = get_memory_or_register!(self, data_id_ptr, data_id_len)?;
+        let data_id: [_; CryptoHash::LENGTH] =
+            (&*data_id).try_into().map_err(|_| HostError::DataIdMalformed)?;
+        let data_id = CryptoHash(data_id);
+        Ok(match self.ext.get_promise_yield_status(data_id)? {
+            None => 0,
+            Some(PromiseYieldStatus::Yielded) => 1,
+            Some(PromiseYieldStatus::ResumeInitiated) => 2,
+        })
     }
 
     /// If the current function is invoked by a callback we can access the execution results of the

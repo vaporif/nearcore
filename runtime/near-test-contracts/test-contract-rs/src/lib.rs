@@ -204,6 +204,7 @@ extern "C" {
         payload_len: u64,
         payload_ptr: u64,
     ) -> u32;
+    fn promise_yield_resume_status(data_id_len: u64, data_id_ptr: u64) -> u32;
     // #######################
     // # Promise API results #
     // #######################
@@ -1288,6 +1289,23 @@ pub unsafe fn call_yield_create_and_resume() {
     // This function's return value will resolve to the value returned by the
     // `check_promise_result` callback
     promise_return(promise_index);
+}
+
+/// Call `promise_yield_resume_status` with the `data_id` passed as input
+/// (must be exactly 32 bytes) and return the discriminant byte via
+/// `value_return`. Caller decodes one byte: 0 = absent, 1 = Yielded,
+/// 2 = ResumeInitiated.
+#[unsafe(no_mangle)]
+pub unsafe fn promise_yield_resume_status_helper() {
+    input(0);
+    let data_len = register_len(0) as usize;
+    let mut data_id = vec![0u8; data_len];
+    read_register(0, data_id.as_mut_ptr());
+
+    let status = promise_yield_resume_status(data_id.len() as u64, data_id.as_ptr() as u64);
+
+    let result = vec![status as u8];
+    value_return(result.len() as u64, result.as_ptr() as u64);
 }
 
 #[unsafe(no_mangle)]

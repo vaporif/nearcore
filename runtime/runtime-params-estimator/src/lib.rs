@@ -328,6 +328,8 @@ static ALL_COSTS: &[(Cost, fn(&mut EstimatorContext) -> GasCost)] = &[
     (Cost::YieldResumeBase, yield_resume_base),
     #[cfg(feature = "nightly")]
     (Cost::YieldResumeByte, yield_resume_byte),
+    #[cfg(feature = "nightly")]
+    (Cost::YieldResumeStatusBase, yield_resume_status_base),
     (Cost::CpuBenchmarkSha256, cpu_benchmark_sha256),
     (Cost::OneCPUInstruction, one_cpu_instruction),
     (Cost::OneNanosecond, one_nanosecond),
@@ -1623,6 +1625,21 @@ fn yield_resume_byte(ctx: &mut EstimatorContext) -> GasCost {
         1,
     );
     with_payload.saturating_sub(&baseline, &NonNegativeTolerance::PER_MILLE) / 1000
+}
+
+#[cfg(feature = "nightly")]
+fn yield_resume_status_base(ctx: &mut EstimatorContext) -> GasCost {
+    // Read-only host fn: no follow-up receipt, so block_latency = 0.
+    // The shared setup block ("yield_resume_base_prepare") still populates the
+    // trie with yielded data_ids before the measurement block runs.
+    fn_cost_with_setup(
+        ctx,
+        "yield_resume_base_prepare",
+        "yield_resume_status_base",
+        ExtCosts::yield_resume_status_base,
+        255,
+        0,
+    )
 }
 
 fn gas_metering(ctx: &mut EstimatorContext) -> (GasCost, GasCost) {

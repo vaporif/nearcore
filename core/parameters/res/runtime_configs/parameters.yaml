@@ -242,6 +242,7 @@ wasm_yield_create_base: 300_000_000_000_000
 wasm_yield_create_byte: 300_000_000_000_000
 wasm_yield_resume_base: 300_000_000_000_000
 wasm_yield_resume_byte: 300_000_000_000_000
+wasm_yield_resume_status_base: 300_000_000_000_000
 
 # Smart contract limits
 max_gas_burnt: 200_000_000_000_000
@@ -284,6 +285,7 @@ reftypes_bulk_memory: false
 gas_key_host_fns: false
 one_yocto_on_promise: false
 p256_verify_host_fn: false
+promise_yield_resume_status_host_fn: false
 
 
 # Congestion Control configuration

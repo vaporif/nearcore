@@ -307,6 +307,10 @@ imports! {
         payload_len: u64,
         payload_ptr: u64
     ] -> [u32]>,
+    #[promise_yield_resume_status_host_fn] promise_yield_resume_status<[
+        data_id_len: u64,
+        data_id_ptr: u64
+    ] -> [u32]>,
     // #######################
     // # Promise API results #
     // #######################

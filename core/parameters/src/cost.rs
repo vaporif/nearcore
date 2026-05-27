@@ -214,6 +214,7 @@ impl ExtCostsConfig {
             ExtCosts::yield_create_byte => 300_000_000_000_000,
             ExtCosts::yield_resume_base => 300_000_000_000_000,
             ExtCosts::yield_resume_byte => 300_000_000_000_000,
+            ExtCosts::yield_resume_status_base => 300_000_000_000_000,
         }
         .map(|_, value| ParameterCost { gas: Gas::from_gas(value), compute: value * factor });
         ExtCostsConfig { costs }
@@ -332,6 +333,7 @@ pub enum ExtCosts {
     storage_large_read_overhead_byte = 84,
     p256_verify_base = 85,
     p256_verify_byte = 86,
+    yield_resume_status_base = 87,
 }
 
 // Type of an action, used in fees logic.
@@ -463,6 +465,7 @@ impl ExtCosts {
             ExtCosts::yield_create_byte => Parameter::WasmYieldCreateByte,
             ExtCosts::yield_resume_base => Parameter::WasmYieldResumeBase,
             ExtCosts::yield_resume_byte => Parameter::WasmYieldResumeByte,
+            ExtCosts::yield_resume_status_base => Parameter::WasmYieldResumeStatusBase,
             ExtCosts::bls12381_p1_sum_base => Parameter::WasmBls12381P1SumBase,
             ExtCosts::bls12381_p1_sum_element => Parameter::WasmBls12381P1SumElement,
             ExtCosts::bls12381_p2_sum_base => Parameter::WasmBls12381P2SumBase,

@@ -399,6 +399,12 @@ pub enum ProtocolFeature {
     /// transaction or `AddKey` action carrying an ML-DSA-65 key/signature, so
     /// post-feature there is no question of grandfathered keys.
     PostQuantumSignatures,
+    /// Expose the in-trie `PromiseYieldStatus` row to WASM via a new
+    /// `promise_yield_resume_status(data_id) -> u32` host function. Returns
+    /// `0` if no row is present (never yielded, already executed, or timed
+    /// out), `1` for `Yielded`, `2` for `ResumeInitiated`. Read-only and
+    /// allowed in view calls; see NEAR issue #15200.
+    PromiseYieldResumeStatusHostFn,
 }
 
 impl ProtocolFeature {
@@ -523,6 +529,7 @@ impl ProtocolFeature {
             ProtocolFeature::EarlyKickout => 152,
             ProtocolFeature::StickyReshardingValidatorAssignment => 153,
             ProtocolFeature::PostQuantumSignatures => 154,
+            ProtocolFeature::PromiseYieldResumeStatusHostFn => 155,
 
             // Spice is setup to include nightly, but not be part of it for now so that features
             // that are released before spice can be tested properly.
@@ -571,7 +578,7 @@ pub fn assert_supported_protocol_version(current_protocol_version: ProtocolVersi
 const STABLE_PROTOCOL_VERSION: ProtocolVersion = 85;
 
 // On nightly, pick big enough version to support all features.
-const NIGHTLY_PROTOCOL_VERSION: ProtocolVersion = 154;
+const NIGHTLY_PROTOCOL_VERSION: ProtocolVersion = 155;
 
 // TODO(spice): Once spice is mature and close to release make it part of nightly - at the point in
 // time cargo feature for spice should be removed as well.

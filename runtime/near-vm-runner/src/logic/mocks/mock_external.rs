@@ -3,12 +3,12 @@ use crate::logic::dependencies::{Result, StorageAccessTracker};
 use crate::logic::types::{
     ActionIndex, GlobalContractDeployMode, GlobalContractIdentifier, ReceiptIndex,
 };
-use crate::logic::{External, HostError, ValuePtr};
+use crate::logic::{External, HostError, VMLogicError, ValuePtr};
 use near_primitives_core::deterministic_account_id::{
     DeterministicAccountStateInit, DeterministicAccountStateInitV1,
 };
 use near_primitives_core::hash::{CryptoHash, hash};
-use near_primitives_core::types::{AccountId, Balance, Gas, GasWeight};
+use near_primitives_core::types::{AccountId, Balance, Gas, GasWeight, PromiseYieldStatus};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -262,6 +262,27 @@ impl External for MockedExternal {
             }
         }
         Ok(false)
+    }
+
+    fn get_promise_yield_status(
+        &self,
+        data_id: CryptoHash,
+    ) -> Result<Option<PromiseYieldStatus>, VMLogicError> {
+        let mut status = None;
+        for action in &self.action_log {
+            match action {
+                MockAction::YieldCreate { data_id: did, .. } if *did == data_id => {
+                    status = Some(PromiseYieldStatus::Yielded);
+                }
+                MockAction::YieldResume { data_id: did, .. } if *did == data_id => {
+                    if status.is_some() {
+                        status = Some(PromiseYieldStatus::ResumeInitiated);
+                    }
+                }
+                _ => {}
+            }
+        }
+        Ok(status)
     }
 
     fn append_action_create_account(&mut self, receipt_index: ReceiptIndex) {

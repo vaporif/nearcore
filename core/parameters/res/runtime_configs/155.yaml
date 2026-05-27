@@ -1,0 +1,5 @@
+promise_yield_resume_status_host_fn: { old: false, new: true }
+# TODO(#15200): provisional value, max of two laptop estimator runs
+# (41.117µs and 38.912µs). Re-measure on the reference machine and
+# decide on a safety multiplier before stabilising.
+wasm_yield_resume_status_base: { old: 300_000_000_000_000, new: 41_116_959_705 }

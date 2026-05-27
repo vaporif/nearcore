@@ -236,6 +236,8 @@ pub struct VMConfigView {
     pub one_yocto_on_promise: bool,
     /// See [VMConfig::p256_verify_host_fn](crate::vm::Config::p256_verify_host_fn).
     pub p256_verify_host_fn: bool,
+    /// See [VMConfig::promise_yield_resume_status_host_fn](crate::vm::Config::promise_yield_resume_status_host_fn).
+    pub promise_yield_resume_status_host_fn: bool,
 
     /// See [VMConfig::storage_get_mode](crate::vm::Config::storage_get_mode).
     pub storage_get_mode: crate::vm::StorageGetMode,
@@ -276,6 +278,7 @@ impl From<crate::vm::Config> for VMConfigView {
             gas_key_host_fns: config.gas_key_host_fns,
             one_yocto_on_promise: config.one_yocto_on_promise,
             p256_verify_host_fn: config.p256_verify_host_fn,
+            promise_yield_resume_status_host_fn: config.promise_yield_resume_status_host_fn,
         }
     }
 }
@@ -300,6 +303,7 @@ impl From<VMConfigView> for crate::vm::Config {
             gas_key_host_fns: view.gas_key_host_fns,
             one_yocto_on_promise: view.one_yocto_on_promise,
             p256_verify_host_fn: view.p256_verify_host_fn,
+            promise_yield_resume_status_host_fn: view.promise_yield_resume_status_host_fn,
         }
     }
 }
@@ -491,6 +495,8 @@ pub struct ExtCostsConfigView {
     pub yield_resume_base: Gas,
     /// Per byte cost of resume payload.
     pub yield_resume_byte: Gas,
+    /// Base cost for querying yield/resume status via `promise_yield_resume_status`.
+    pub yield_resume_status_base: Gas,
     pub bls12381_p1_sum_base: Gas,
     pub bls12381_p1_sum_element: Gas,
     pub bls12381_p2_sum_base: Gas,
@@ -589,6 +595,7 @@ impl From<crate::ExtCostsConfig> for ExtCostsConfigView {
             yield_create_byte: config.gas_cost(ExtCosts::yield_create_byte),
             yield_resume_base: config.gas_cost(ExtCosts::yield_resume_base),
             yield_resume_byte: config.gas_cost(ExtCosts::yield_resume_byte),
+            yield_resume_status_base: config.gas_cost(ExtCosts::yield_resume_status_base),
             bls12381_p1_sum_base: config.gas_cost(ExtCosts::bls12381_p1_sum_base),
             bls12381_p1_sum_element: config.gas_cost(ExtCosts::bls12381_p1_sum_element),
             bls12381_p2_sum_base: config.gas_cost(ExtCosts::bls12381_p2_sum_base),
@@ -689,6 +696,7 @@ impl From<ExtCostsConfigView> for crate::ExtCostsConfig {
                 ExtCosts::yield_create_byte => view.yield_create_byte,
                 ExtCosts::yield_resume_base => view.yield_resume_base,
                 ExtCosts::yield_resume_byte => view.yield_resume_byte,
+                ExtCosts::yield_resume_status_base => view.yield_resume_status_base,
                 ExtCosts::bls12381_p1_sum_base => view.bls12381_p1_sum_base,
                 ExtCosts::bls12381_p1_sum_element => view.bls12381_p1_sum_element,
                 ExtCosts::bls12381_p2_sum_base => view.bls12381_p2_sum_base,

@@ -636,3 +636,312 @@ fn test_yield_resume_across_protocol_upgrade() {
 
     assert_no_promise_yield_status_in_state(&env);
 }
+
+/// Lifecycle test for `promise_yield_resume_status`. Asserts that, for a
+/// single `data_id` the contract yielded:
+/// - status is `0` before the yield (random `data_id`)
+/// - status is `1` after `yield_create`
+/// - status is `2` after the first `yield_resume`
+/// - status is `0` again after the resumed callback executes
+#[test]
+fn test_promise_yield_resume_status_lifecycle() {
+    // Only run when the host fn is available.
+    if !ProtocolFeature::PromiseYieldResumeStatusHostFn.enabled(PROTOCOL_VERSION) {
+        return;
+    }
+
+    let mut env = prepare_env();
+    let signer = create_user_test_signer(&AccountId::from_str("test0").unwrap());
+    let genesis_block = env.validator().client().chain.get_block_by_height(0).unwrap();
+    let mut next_block_height = NEXT_BLOCK_HEIGHT_AFTER_SETUP;
+    let yield_payload = vec![6u8; 16];
+
+    // --- Pre-yield: status is 0 for a random data_id.
+    let random_data_id = CryptoHash::hash_bytes(b"never-yielded-id").0.to_vec();
+    let nonce_pre = 200u64;
+    let pre_tx = SignedTransaction::from_actions(
+        nonce_pre,
+        "test0".parse().unwrap(),
+        "test0".parse().unwrap(),
+        &signer,
+        vec![Action::FunctionCall(Box::new(FunctionCallAction {
+            method_name: "promise_yield_resume_status_helper".to_string(),
+            args: random_data_id,
+            gas: Gas::from_teragas(300),
+            deposit: Balance::ZERO,
+        }))],
+        *genesis_block.hash(),
+    );
+    let pre_hash = pre_tx.get_hash();
+    env.validator().submit_tx(pre_tx);
+    for _ in 0..2 {
+        env.validator_runner().run_until_executed_height(next_block_height);
+        next_block_height += 1;
+    }
+    assert_eq!(
+        env.validator().client().chain.get_partial_transaction_result(&pre_hash).unwrap().status,
+        FinalExecutionStatus::SuccessValue(vec![0u8]),
+    );
+
+    // --- Yield: drive call_yield_create_return_promise, which writes the new data_id to storage
+    // at key 42 (so the resume tx below can read it back) and yields with the
+    // `check_promise_result_return_value` callback.
+    let yield_tx = SignedTransaction::from_actions(
+        nonce_pre + 1,
+        "test0".parse().unwrap(),
+        "test0".parse().unwrap(),
+        &signer,
+        vec![Action::FunctionCall(Box::new(FunctionCallAction {
+            method_name: "call_yield_create_return_promise".to_string(),
+            args: yield_payload.clone(),
+            gas: Gas::from_teragas(300),
+            deposit: Balance::ZERO,
+        }))],
+        *genesis_block.hash(),
+    );
+    env.validator().submit_tx(yield_tx);
+    for _ in 0..2 {
+        env.validator_runner().run_until_executed_height(next_block_height);
+        next_block_height += 1;
+    }
+    // The data_id is now in the PROMISE_YIELD_RECEIPT trie column; pull it out by iterating state.
+    let yield_data_ids = get_yield_data_ids_in_latest_state(&env);
+    assert_eq!(yield_data_ids.len(), 1, "expected exactly one yielded data_id in state");
+    let data_id = yield_data_ids[0].0.to_vec();
+
+    // Status is 1 (Yielded) for that data_id.
+    let status1_tx = SignedTransaction::from_actions(
+        nonce_pre + 2,
+        "test0".parse().unwrap(),
+        "test0".parse().unwrap(),
+        &signer,
+        vec![Action::FunctionCall(Box::new(FunctionCallAction {
+            method_name: "promise_yield_resume_status_helper".to_string(),
+            args: data_id.clone(),
+            gas: Gas::from_teragas(300),
+            deposit: Balance::ZERO,
+        }))],
+        *genesis_block.hash(),
+    );
+    let status1_hash = status1_tx.get_hash();
+    env.validator().submit_tx(status1_tx);
+    for _ in 0..2 {
+        env.validator_runner().run_until_executed_height(next_block_height);
+        next_block_height += 1;
+    }
+    assert_eq!(
+        env.validator()
+            .client()
+            .chain
+            .get_partial_transaction_result(&status1_hash)
+            .unwrap()
+            .status,
+        FinalExecutionStatus::SuccessValue(vec![1u8]),
+    );
+
+    // --- Resume + status check in a single multi-action transaction. The two actions execute
+    // sequentially within the same receipt, so the second action observes the trie state mutated
+    // by the first action. The resume sets the row to `ResumeInitiated`; the cleanup happens only
+    // when the resume data receipt runs in the next block, so the in-receipt check sees `2`.
+    let resume_and_check_tx = SignedTransaction::from_actions(
+        nonce_pre + 3,
+        "test0".parse().unwrap(),
+        "test0".parse().unwrap(),
+        &signer,
+        vec![
+            Action::FunctionCall(Box::new(FunctionCallAction {
+                method_name: "call_yield_resume_read_data_id_from_storage".to_string(),
+                args: yield_payload,
+                gas: Gas::from_teragas(150),
+                deposit: Balance::ZERO,
+            })),
+            Action::FunctionCall(Box::new(FunctionCallAction {
+                method_name: "promise_yield_resume_status_helper".to_string(),
+                args: data_id.clone(),
+                gas: Gas::from_teragas(150),
+                deposit: Balance::ZERO,
+            })),
+        ],
+        *genesis_block.hash(),
+    );
+    let resume_and_check_hash = resume_and_check_tx.get_hash();
+    env.validator().submit_tx(resume_and_check_tx);
+    for _ in 0..2 {
+        env.validator_runner().run_until_executed_height(next_block_height);
+        next_block_height += 1;
+    }
+    // The last action's value_return wins for the tx-level FinalExecutionStatus.
+    assert_eq!(
+        env.validator()
+            .client()
+            .chain
+            .get_partial_transaction_result(&resume_and_check_hash)
+            .unwrap()
+            .status,
+        FinalExecutionStatus::SuccessValue(vec![2u8]),
+    );
+
+    // --- After the resumed callback executes, the row is removed → status back to 0.
+    // Run enough blocks for the resumed callback to finish.
+    for _ in 0..3 {
+        env.validator_runner().run_until_executed_height(next_block_height);
+        next_block_height += 1;
+    }
+    assert_no_promise_yield_status_in_state(&env);
+
+    let status0_tx = SignedTransaction::from_actions(
+        nonce_pre + 4,
+        "test0".parse().unwrap(),
+        "test0".parse().unwrap(),
+        &signer,
+        vec![Action::FunctionCall(Box::new(FunctionCallAction {
+            method_name: "promise_yield_resume_status_helper".to_string(),
+            args: data_id,
+            gas: Gas::from_teragas(300),
+            deposit: Balance::ZERO,
+        }))],
+        *genesis_block.hash(),
+    );
+    let status0_hash = status0_tx.get_hash();
+    env.validator().submit_tx(status0_tx);
+    for _ in 0..2 {
+        env.validator_runner().run_until_executed_height(next_block_height);
+        next_block_height += 1;
+    }
+    assert_eq!(
+        env.validator()
+            .client()
+            .chain
+            .get_partial_transaction_result(&status0_hash)
+            .unwrap()
+            .status,
+        FinalExecutionStatus::SuccessValue(vec![0u8]),
+    );
+}
+
+/// Confirms that under a protocol version below the gate the host function
+/// is not registered: a contract attempting to call it gets a wasm link
+/// failure surfaced as `FinalExecutionStatus::Failure`.
+#[test]
+// TODO(spice-test): Assess if this test is relevant for spice and if yes fix it.
+// On non-x86_64 (e.g. macOS ARM), Wasmtime is always used, which runs V3
+// instrumentation that charges linear gas for memory.grow/table.grow. This
+// test pins the genesis at an old protocol where linear_op costs are 300 Tgas
+// sentinel values, which causes any contract with memory.grow to immediately
+// exceed max_gas_burnt — so the gate path cannot be exercised here.
+#[cfg_attr(any(feature = "protocol_feature_spice", not(target_arch = "x86_64")), ignore)]
+fn test_promise_yield_resume_status_gated_by_protocol_version() {
+    init_test_logger();
+
+    let new_protocol = ProtocolFeature::PromiseYieldResumeStatusHostFn.protocol_version();
+    let old_protocol = new_protocol - 1;
+    assert!(!ProtocolFeature::PromiseYieldResumeStatusHostFn.enabled(old_protocol));
+
+    // If the local PROTOCOL_VERSION is below the gate, we cannot build a client capable of
+    // running the gated host fn — but we also do not need to, the gate is not reachable here.
+    if PROTOCOL_VERSION < new_protocol {
+        return;
+    }
+
+    let epoch_length = 5;
+    let test_account: AccountId = "test0".parse().unwrap();
+    let test_account_signer: Signer = create_user_test_signer(&test_account).into();
+
+    let shard_layout = ShardLayout::single_shard();
+    let user_accounts = vec![test_account.clone()];
+    let initial_balance = Balance::from_near(1_000_000);
+    let validators_spec = ValidatorsSpec::DesiredRoles {
+        block_and_chunk_producers: vec!["validator0".parse().unwrap()],
+        chunk_validators_only: Vec::new(),
+    };
+    let clients = validators_spec_clients(&validators_spec);
+    let genesis = TestLoopBuilder::new_genesis_builder()
+        .protocol_version(old_protocol)
+        .shard_layout(shard_layout.clone())
+        .epoch_length(epoch_length)
+        .validators_spec(validators_spec.clone())
+        .add_user_accounts_simple(&user_accounts, initial_balance)
+        .build();
+
+    let genesis_epoch_info = TestEpochConfigBuilder::new()
+        .epoch_length(epoch_length)
+        .shard_layout(shard_layout.clone())
+        .validators_spec(validators_spec)
+        .build();
+
+    let mainnet_epoch_config_store = EpochConfigStore::for_chain_id("mainnet", None).unwrap();
+    let old_epoch_config: EpochConfig =
+        mainnet_epoch_config_store.get_config(old_protocol).deref().clone();
+
+    let adjust_epoch_config = |mut config: EpochConfig| -> EpochConfig {
+        config.epoch_length = epoch_length;
+        config.num_block_producer_seats = genesis_epoch_info.num_block_producer_seats;
+        config.num_chunk_producer_seats = genesis_epoch_info.num_chunk_producer_seats;
+        config.num_chunk_validator_seats = genesis_epoch_info.num_chunk_validator_seats;
+        config.with_shard_layout(shard_layout.clone())
+    };
+    let old_epoch_config = adjust_epoch_config(old_epoch_config);
+
+    let epoch_config_store = EpochConfigStore::test(BTreeMap::from_iter(vec![
+        (old_protocol, Arc::new(old_epoch_config)),
+        // Need to pass a config for PROTOCOL_VERSION because some setup code in client asks for
+        // the shard layout in PROTOCOL_VERSION to estimate size of a thread pool. Not used in the
+        // test itself.
+        (PROTOCOL_VERSION, mainnet_epoch_config_store.get_config(PROTOCOL_VERSION).clone()),
+    ]));
+
+    // Keep the upgrade target at the same old protocol so the gate never opens during the test.
+    let protocol_upgrade_schedule = ProtocolUpgradeVotingSchedule::new_immediate(old_protocol);
+
+    let mut env = TestLoopBuilder::new()
+        .genesis(genesis)
+        .epoch_config_store(epoch_config_store)
+        .protocol_upgrade_schedule(protocol_upgrade_schedule)
+        .clients(clients)
+        .build();
+
+    // Confirm we are pinned at the old protocol version.
+    let start_head = env.validator().head();
+    assert_eq!(
+        env.validator()
+            .client()
+            .epoch_manager
+            .get_epoch_protocol_version(&start_head.epoch_id)
+            .unwrap(),
+        old_protocol
+    );
+
+    // Deploy the contract.
+    let deploy_contract_tx = SignedTransaction::deploy_contract(
+        1,
+        &test_account,
+        near_test_contracts::rs_contract().into(),
+        &test_account_signer,
+        start_head.last_block_hash,
+    );
+    env.validator_runner().run_tx(deploy_contract_tx, Duration::seconds(5));
+
+    // Call the gated host fn under the old protocol.
+    let random_data_id = CryptoHash::hash_bytes(b"gated-id").0.to_vec();
+    let tx = SignedTransaction::from_actions(
+        200,
+        "test0".parse().unwrap(),
+        "test0".parse().unwrap(),
+        &test_account_signer,
+        vec![Action::FunctionCall(Box::new(FunctionCallAction {
+            method_name: "promise_yield_resume_status_helper".to_string(),
+            args: random_data_id,
+            gas: Gas::from_teragas(300),
+            deposit: Balance::ZERO,
+        }))],
+        start_head.last_block_hash,
+    );
+    let tx_hash = tx.get_hash();
+    env.validator().submit_tx(tx);
+    env.validator_runner().run_for_number_of_blocks(2);
+
+    let status =
+        env.validator().client().chain.get_final_transaction_result(&tx_hash).unwrap().status;
+
+    assert_matches!(status, FinalExecutionStatus::Failure(_));
+}

@@ -230,6 +230,10 @@ pub struct Config {
     /// NEP-635: <https://github.com/near/NEPs/pull/635>
     pub p256_verify_host_fn: bool,
 
+    /// Whether to enable the `promise_yield_resume_status` host function.
+    /// See NEAR issue #15200.
+    pub promise_yield_resume_status_host_fn: bool,
+
     /// Describes limits for VM and Runtime.
     pub limit_config: LimitConfig,
 }
@@ -263,6 +267,7 @@ impl Config {
         self.global_contract_host_fns = true;
         self.gas_key_host_fns = true;
         self.p256_verify_host_fn = true;
+        self.promise_yield_resume_status_host_fn = true;
     }
 }
 

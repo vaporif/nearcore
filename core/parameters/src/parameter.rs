@@ -156,6 +156,7 @@ pub enum Parameter {
     WasmYieldCreateByte,
     WasmYieldResumeBase,
     WasmYieldResumeByte,
+    WasmYieldResumeStatusBase,
     WasmBls12381P1SumBase,
     WasmBls12381P1SumElement,
     WasmBls12381P2SumBase,
@@ -270,6 +271,9 @@ pub enum Parameter {
 
     // Flag to enable the P-256 verification host function
     P256VerifyHostFn,
+
+    // Flag to enable the promise_yield_resume_status host function
+    PromiseYieldResumeStatusHostFn,
 }
 
 #[derive(

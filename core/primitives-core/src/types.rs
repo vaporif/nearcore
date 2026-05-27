@@ -2,6 +2,8 @@
 pub use crate::account::id::AccountId;
 pub use crate::gas::Gas;
 use crate::hash::CryptoHash;
+use borsh::{BorshDeserialize, BorshSerialize};
+use near_schema_checker_lib::ProtocolSchema;
 use std::num::{NonZeroU64, ParseIntError};
 use std::ops::Add;
 use std::str::FromStr;
@@ -46,6 +48,25 @@ pub type BlockHeightDelta = u64;
 
 pub type ReceiptIndex = usize;
 pub type PromiseId = Vec<ReceiptIndex>;
+
+/// Keeps the current status of a single yield/resume operation. Before yielding and after executing
+/// the resumed receipt there's no status, it is deleted from the state when the yielded receipt is executed.
+/// Possible state transitions:
+/// 1. Happy path:
+///    None --promise_yield_create--> Yielded --promise_yield_resume--> ResumeInitiated --execute--> None
+/// 2. Timeout:
+///    None --promise_yield_create--> Yielded --trigger timeout--> Yielded --timeout arrives,execute--> None
+#[derive(BorshSerialize, BorshDeserialize, Debug, Clone, Copy, PartialEq, Eq, ProtocolSchema)]
+#[borsh(use_discriminant = true)]
+pub enum PromiseYieldStatus {
+    /// The contract performed `yield`. It didn't perform `resume` yet.
+    Yielded = 0,
+    /// The contract performed `resume` at least once, there are some `PromiseResume` receipts in
+    /// flight. The yielded receipt wasn't applied yet, it's still waiting for the first
+    /// `PromiseResume` receipt to arrive. Timeouts don't count as `ResumeInitiated`, the resumption
+    /// has to be coming from the contract itself.
+    ResumeInitiated = 1,
+}
 
 pub type ProtocolVersion = u32;
 

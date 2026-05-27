@@ -11,6 +11,7 @@ mod logs;
 mod miscs;
 mod p256_verify;
 mod p256_verify_wycheproof;
+mod promise_yield_resume_status;
 mod promises;
 mod registers;
 mod storage_read_write;

@@ -813,6 +813,15 @@ pub enum Cost {
     /// `promise_yield_resume` host function.
     YieldResumeByte,
 
+    /// Estimates `yield_resume_status_base`, which covers the base cost of the
+    /// `promise_yield_resume_status` host function (a single trie read keyed
+    /// on `(current_account_id, data_id)`).
+    ///
+    /// Estimation: prepare state with N yielded data_ids and a contract that
+    /// reads each from storage, then call `promise_yield_resume_status` for
+    /// each in a single function call. Modelled on `YieldResumeBase`.
+    YieldResumeStatusBase,
+
     __Count,
 }
 
